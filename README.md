@@ -2,8 +2,7 @@
 
 > An intelligent IT Service Management (ITSM) platform powered by Machine Learning, inspired by ServiceNow's intelligent routing capabilities.
 
-**Live demo:** [Frontend](https://helpdesk-ai-frontend-retv.onrender.com/) · [Backend API docs](https://helpdesk-ai-backend-0o3i.onrender.com/docs)
-(Free-tier hosting — spins down after ~15 min idle, so the first request after that can take 30-60s to wake up.)
+
 
 [![CI](https://github.com/Shubhsinghal31/Intelligent-IT-Ticket-Routing/actions/workflows/ci.yml/badge.svg)](https://github.com/Shubhsinghal31/Intelligent-IT-Ticket-Routing/actions/workflows/ci.yml)
 [![Python](https://img.shields.io/badge/Python-3.10+-blue.svg)](https://www.python.org/)
