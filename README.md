@@ -200,7 +200,7 @@ or local run and drop them in a new `docs/screenshots/milestone-15/` folder:
 
 **Shubh Singhal**
 - GitHub: [@Shubhsinghal31](https://github.com/Shubhsinghal31)
-- LinkedIn: [Shubh Singhal](https://linkedin.com/in/shubh-singhal)
+- LinkedIn: [Shubh Singhal](https://www.linkedin.com/in/shubh-singhal-b052a5230/)
 
 ## 📜 License
 
