@@ -1,0 +1,32 @@
+# syntax=docker/dockerfile:1
+#
+# Frontend image — Streamlit UI.
+#
+# Build context must be the REPO ROOT (see docker/Dockerfile.backend's
+# header comment for the same note — docker-compose.yml handles this
+# via `build.context: ..`).
+
+FROM python:3.11-slim
+
+WORKDIR /app
+
+# Same shared requirements.txt as the backend image (see README's
+# "Alternatives Considered" note on splitting this later) — this image
+# installs scikit-learn/pandas/etc. it never uses, trading a larger
+# image for a single dependency file to keep in sync.
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+
+COPY frontend/ frontend/
+
+RUN useradd --create-home --uid 1000 appuser && chown -R appuser:appuser /app
+USER appuser
+
+EXPOSE 8501
+
+# Streamlit exposes its own health endpoint — no app code needed to
+# support this healthcheck.
+HEALTHCHECK --interval=30s --timeout=5s --start-period=15s --retries=3 \
+    CMD python -c "import urllib.request; urllib.request.urlopen('http://localhost:8501/_stcore/health')" || exit 1
+
+CMD ["streamlit", "run", "frontend/Home.py", "--server.address=0.0.0.0", "--server.port=8501"]

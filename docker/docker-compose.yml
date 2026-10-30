@@ -1,0 +1,89 @@
+# Local development orchestration — runs the FULL app in containers:
+# Postgres + backend + frontend.
+#
+# This is NOT docker-compose.test.yml (existing) — that file spins up a
+# single throwaway Postgres for `pytest tests/integration` only. This
+# file is for developing/demoing the whole app without running
+# `uvicorn`/`streamlit` natively in a .venv.
+#
+# The Postgres container below uses its own FIXED, Docker-only
+# credentials — deliberately not your native Postgres password from
+# .env. Two reasons: (1) it's a genuinely separate database, with its
+# own named volume, so there's no reason to couple its credentials to
+# your native install's; (2) this project's real local dev password
+# contains an "@" character, which cannot appear unescaped in a
+# postgresql:// URL's password segment (it's the same delimiter that
+# separates credentials from host) — a fixed, no-special-characters dev
+# password sidesteps that URL-encoding problem entirely. This mirrors
+# the same fixed-credentials pattern docker-compose.test.yml already
+# uses for its own throwaway database.
+#
+# Usage — run from the REPO ROOT, not from inside docker/:
+#   docker compose -f docker/docker-compose.yml up --build
+#   docker compose -f docker/docker-compose.yml down        # stop
+#   docker compose -f docker/docker-compose.yml down -v     # stop + wipe DB volume
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: helpdesk_ai_postgres_dev
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: helpdesk_docker_dev
+      POSTGRES_DB: helpdesk_ai
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_dev_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  backend:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.backend
+    container_name: helpdesk_ai_backend_dev
+    env_file:
+      - ../.env
+    environment:
+      # These override whatever DB_* values env_file just loaded from
+      # .env — this container reaches Postgres via the Compose service
+      # name "postgres" (Docker's internal DNS), never "localhost", and
+      # uses the fixed dev credentials defined above instead of your
+      # native Postgres password.
+      DB_HOST: postgres
+      DB_PASSWORD: helpdesk_docker_dev
+      DATABASE_URL: postgresql://postgres:helpdesk_docker_dev@postgres:5432/helpdesk_ai
+    depends_on:
+      postgres:
+        condition: service_healthy
+    ports:
+      - "8000:8000"
+    volumes:
+      - uploads_dev_data:/app/uploads
+    # Brings the database from empty to fully migrated + seeded (safe to
+    # run on every container start — see database/bootstrap.py's
+    # docstring on idempotency) before the API starts accepting traffic.
+    command: sh -c "python -m database.bootstrap && uvicorn backend.main:app --host 0.0.0.0 --port 8000"
+
+  frontend:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.frontend
+    container_name: helpdesk_ai_frontend_dev
+    environment:
+      # A container can't reach another container via "localhost" — that
+      # resolves to itself, not its sibling. "backend" is the Compose
+      # service name above, resolved through Docker's internal network.
+      API_BASE_URL: http://backend:8000
+    depends_on:
+      - backend
+    ports:
+      - "8501:8501"
+
+volumes:
+  postgres_dev_data:
+  uploads_dev_data:

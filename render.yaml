@@ -1,0 +1,100 @@
+# Render Blueprint — declares this project's entire cloud footprint as code.
+#
+# Importing this file in the Render dashboard ("New > Blueprint", pointed at
+# this GitHub repo) creates all three resources below in one shot: a managed
+# Postgres database, the FastAPI backend as a Docker web service, and the
+# Streamlit frontend as a second Docker web service — wired together with
+# no secret ever typed into the Render UI by hand (see generateValue/
+# fromDatabase/fromService below).
+#
+# Reference: https://render.com/docs/blueprint-spec
+
+databases:
+  - name: helpdesk-ai-db
+    databaseName: helpdesk_ai
+    plan: free
+    postgresMajorVersion: "16" # matches docker/docker-compose.yml's postgres:16-alpine
+
+services:
+  # =====================================================
+  # Backend — FastAPI, same Dockerfile used for local Docker dev
+  # =====================================================
+  - type: web
+    name: helpdesk-ai-backend
+    runtime: docker
+    plan: free
+    # Both paths are relative to the REPO ROOT, exactly like
+    # docker/docker-compose.yml's `build.context: ..` — no Dockerfile
+    # changes were needed for Render.
+    dockerfilePath: docker/Dockerfile.backend
+    dockerContext: .
+    # preDeployCommand (runs once, before any replica starts — the ideal
+    # place for a migration) is a paid-plan-only feature; Render rejects it
+    # on the free plan ("pre-deploy command is not supported for free tier
+    # services"). dockerCommand is the free-tier-compatible fallback: it
+    # overrides the Dockerfile's CMD outright, so bootstrap runs and
+    # finishes before uvicorn starts accepting traffic — same ordering
+    # guarantee, just inline instead of a separate deploy phase.
+    #
+    # Points at a script file (docker/start-backend.sh, baked into the
+    # image at build time — see Dockerfile.backend) instead of an inline
+    # `sh -c "cmd1 && cmd2"` string: that inline form was tried first and
+    # failed with "sh: 1: python -m database.bootstrap && uvicorn ...: not
+    # found" (exit 127) — Render's dockerCommand field doesn't shell-parse
+    # a quoted, &&-chained string the way docker-compose.yml's `command:`
+    # does locally. A bare script path has no spaces or shell
+    # metacharacters left for Render to mis-tokenize.
+    dockerCommand: ./start-backend.sh
+    healthCheckPath: / # backend/main.py's existing root endpoint
+    envVars:
+      - key: PORT
+        value: "8000" # matches Dockerfile.backend's EXPOSE/CMD port
+      - key: APP_ENV
+        value: production
+      - key: APP_DEBUG
+        value: "false"
+      - key: DATABASE_URL
+        fromDatabase:
+          name: helpdesk-ai-db
+          property: connectionString
+      - key: DB_PASSWORD
+        fromDatabase:
+          name: helpdesk-ai-db
+          property: password
+      - key: JWT_SECRET_KEY
+        generateValue: true # Render generates a random 256-bit secret — never typed in chat or committed
+      - key: FRONTEND_URL
+        fromService:
+          type: web
+          name: helpdesk-ai-frontend
+          envVarKey: RENDER_EXTERNAL_URL # Render's own auto-injected public URL for that service
+      - key: CORS_ORIGINS
+        fromService:
+          type: web
+          name: helpdesk-ai-frontend
+          envVarKey: RENDER_EXTERNAL_URL
+        # A single URL with no commas still parses correctly — see
+        # backend/core/config.py's cors_origins_list property, added
+        # specifically to accept this plain-string form (Render Blueprints
+        # can't produce a JSON-array string via envVarKey/fromService).
+
+  # =====================================================
+  # Frontend — Streamlit, same Dockerfile used for local Docker dev
+  # =====================================================
+  - type: web
+    name: helpdesk-ai-frontend
+    runtime: docker
+    plan: free
+    dockerfilePath: docker/Dockerfile.frontend
+    dockerContext: .
+    healthCheckPath: /_stcore/health # Streamlit's built-in health endpoint
+    envVars:
+      - key: PORT
+        value: "8501" # matches Dockerfile.frontend's EXPOSE/CMD port
+      - key: API_BASE_URL
+        fromService:
+          type: web
+          name: helpdesk-ai-backend
+          envVarKey: RENDER_EXTERNAL_URL
+      - key: API_TIMEOUT_SECONDS
+        value: "60" # free-tier cold start after idle can take 30-60s; see api_client.py's comment

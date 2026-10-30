@@ -1,0 +1,72 @@
+# Production dependencies will be added in subsequent milestones.
+# Run: pip install -r requirements.txt
+
+# ============================================
+# Web Framework
+# ============================================
+fastapi==0.115.0
+uvicorn[standard]==0.32.0
+
+# ============================================
+# Database
+# ============================================
+sqlalchemy==2.0.35
+psycopg2-binary==2.9.10
+alembic==1.13.3
+
+# ============================================
+# Configuration & Validation
+# ============================================
+pydantic==2.9.2
+pydantic-settings==2.5.2
+python-dotenv==1.0.1
+
+# ============================================
+# Logging
+# ============================================
+loguru==0.7.2
+
+# ============================================
+# Authentication & Security
+# ============================================
+passlib[bcrypt]==1.7.4
+# Pinned explicitly, not left to passlib's [bcrypt] extra to resolve.
+# passlib 1.7.4 (unmaintained since ~2020) reads bcrypt.__about__.__version__
+# to detect the backend version — bcrypt removed that module in 4.1.0
+# (Oct 2023). Any bcrypt >=4.1 breaks passlib's version probe, which
+# then raises inside verify_password() and gets treated as "wrong
+# password" for every login, regardless of whether the password is
+# correct. Unpinned, `pip install` resolves whatever bcrypt is newest
+# at install time — a .venv created before Oct 2023 would silently get
+# a working version, while a fresh install (e.g. every `docker build`)
+# gets the latest, broken one. Pinning here makes every install
+# (native or Docker) resolve the same known-good version instead of
+# depending on when `pip install` happened to run.
+bcrypt==4.0.1
+python-jose[cryptography]==3.3.0
+python-multipart==0.0.12
+email-validator==2.2.0
+
+# ============================================
+# Python Libraries
+# ============================================
+
+scikit-learn==1.4.2
+joblib==1.4.2
+numpy==1.26.4
+pandas==2.2.2
+
+streamlit==1.35.0
+requests==2.32.3
+plotly==5.22.0
+
+# ============================================
+# Reports (Milestone 9) — Excel and PDF export
+# ============================================
+openpyxl==3.1.5
+reportlab==4.2.5
+
+# ============================================
+# Rate limiting (Milestone 10) — brute-force protection
+# ============================================
+slowapi==0.1.9

@@ -1,0 +1,46 @@
+# Not needed inside the image, or actively dangerous to include.
+#
+# Most importantly: .env is excluded so secrets never get baked into an
+# image layer. Docker Compose injects configuration at container-start
+# time instead (see docker/docker-compose.yml's env_file/environment),
+# which is also how Render (Milestone 14) will do it in production.
+
+.venv/
+venv/
+env/
+__pycache__/
+*.pyc
+*.pyo
+
+.git/
+.github/
+.gitignore
+.gitattributes
+
+.pytest_cache/
+.pytest_tmp/
+tests/
+
+.env
+.env.local
+.env.*.local
+
+logs/
+*.log
+uploads/
+
+# Trained models and generated training data are build artifacts, not
+# source — the Dockerfile regenerates them with `RUN python -m ml...`.
+# Excluding stale local copies keeps the build context smaller and
+# guarantees the image never ships with a locally-generated pickle file
+# instead of the one built for it.
+ml/models/*.pkl
+ml/data/training_data.csv
+
+docs/
+*.md
+!README.md
+
+.vscode/
+.idea/
+.DS_Store

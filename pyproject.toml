@@ -1,0 +1,111 @@
+[project]
+name = "helpdesk-ai"
+version = "0.1.0"
+description = "Enterprise ITSM Assistant with ML-powered ticket routing"
+authors = [
+    { name = "Shubh Singhal" }
+]
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "MIT" }
+
+# ============================================
+# Black formatter config
+# ============================================
+[tool.black]
+line-length = 100
+target-version = ["py310"]
+include = '\.pyi?$'
+exclude = '''
+/(
+    \.venv
+  | \.git
+  | build
+  | dist
+  | __pycache__
+)/
+'''
+
+# ============================================
+# Ruff linter config (fast modern linter)
+# ============================================
+[tool.ruff]
+line-length = 100
+target-version = "py310"
+exclude = [".venv", "__pycache__", "build", "dist"]
+
+[tool.ruff.lint]
+select = [
+    "E",   # pycodestyle errors
+    "W",   # pycodestyle warnings
+    "F",   # pyflakes
+    "I",   # isort (import ordering)
+    "B",   # flake8-bugbear
+    "C4",  # flake8-comprehensions
+    "UP",  # pyupgrade
+]
+ignore = [
+    "E501",  # line too long (handled by black)
+    "B008",  # function-call-in-default-argument — FastAPI's `Depends(...)`
+    # pattern IS a function call in a default argument, by design (that's
+    # how FastAPI's dependency injection works). Bugbear's B008 exists to
+    # catch a different, real bug — mutable default arguments evaluated
+    # once at function-definition time — which doesn't apply here because
+    # FastAPI special-cases Depends() and calls it fresh per request.
+    # Silencing this project-wide (rather than per-line) is FastAPI's own
+    # documented recommendation.
+]
+
+# E402 (import not at top of file) is a real style rule everywhere except
+# two deliberate patterns in this codebase:
+#   - frontend/**: every Streamlit page inserts the project root onto
+#     sys.path *before* importing `frontend.*` / `backend.*` modules,
+#     because Streamlit runs each page as a standalone script with no
+#     guaranteed working directory.
+#   - tests/integration/conftest.py: env vars must be set before the
+#     first `backend.*` import, since backend/core/config.py builds its
+#     Settings singleton at import time (see that file's own comment).
+[tool.ruff.lint.per-file-ignores]
+"frontend/**.py" = ["E402"]
+"tests/integration/conftest.py" = ["E402"]
+
+# ============================================
+# Pytest config
+# ============================================
+[tool.pytest.ini_options]
+minversion = "7.0"
+testpaths = ["tests"]
+python_files = ["test_*.py", "*_test.py"]
+python_classes = ["Test*"]
+python_functions = ["test_*"]
+addopts = [
+    "-v",
+    "--strict-markers",
+    "--tb=short",
+    # Use a project-local temp dir for the tmp_path/tmp_path_factory
+    # fixtures instead of the OS default (%TEMP% on Windows, /tmp on
+    # Linux/Mac). Added because a Windows %TEMP%\pytest-of-<user> folder
+    # can end up in a locked/permission-denied state (antivirus, a prior
+    # crashed run, etc.) that even the owning user can't delete -- pytest
+    # then fails at fixture setup for every test using tmp_path, with no
+    # connection to the code under test. A dedicated folder inside the
+    # repo sidesteps that class of problem entirely. Pytest wipes this
+    # directory's contents at the start of every session, so it must
+    # never be pointed at anything containing other data (see .gitignore
+    # for why it's excluded from version control).
+    "--basetemp=.pytest_tmp",
+]
+
+# ============================================
+# Coverage config
+# ============================================
+[tool.coverage.run]
+source = ["backend"]
+omit = ["*/tests/*", "*/__init__.py"]
+
+[tool.coverage.report]
+exclude_lines = [
+    "pragma: no cover",
+    "raise NotImplementedError",
+    "if __name__ == .__main__.:",
+]

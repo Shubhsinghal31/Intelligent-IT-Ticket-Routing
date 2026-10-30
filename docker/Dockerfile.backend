@@ -1,0 +1,85 @@
+# syntax=docker/dockerfile:1
+#
+# Backend image — FastAPI + ML models baked in at build time.
+#
+# Build context must be the REPO ROOT, not docker/, since every COPY
+# below is relative to it (docker/docker-compose.yml sets this via
+# `build.context: ..`). Building with `docker build -f docker/Dockerfile.backend .`
+# from the repo root works the same way.
+
+FROM python:3.11-slim
+
+# Why python:3.11-slim over python:3.11 (full) or an alpine variant:
+# every pinned dependency in requirements.txt (psycopg2-binary, numpy,
+# pandas, scikit-learn) publishes prebuilt manylinux wheels for 3.11 on
+# Debian-based images, so no C compiler/build-essential layer is needed
+# here. Alpine's musl libc frequently lacks matching wheels for
+# scientific-Python packages, forcing slow from-source builds — slim
+# avoids that trap while staying far smaller than the full image.
+
+WORKDIR /app
+
+# Dependencies in their own layer, copied before the rest of the source.
+# Docker caches layers by content hash of what's COPYed — as long as
+# requirements.txt doesn't change, `docker build` reuses this layer
+# instead of re-running `pip install` on every source-code edit.
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+
+# Application source
+COPY backend/ backend/
+COPY database/ database/
+COPY alembic/ alembic/
+COPY alembic.ini .
+COPY ml/ ml/
+
+# Train all four ML models at build time.
+#
+# This is safe and deterministic: ml/data/generate_training_data.py and
+# every script in ml/training/ seed both `random` and `numpy.random`
+# with 42, so every image build produces the same models — there's no
+# "works on my machine but prod predicts differently" risk.
+#
+# ml/service.py degrades gracefully if these files are ever absent
+# (predictions fall back to safe defaults rather than crashing ticket
+# creation — see MLService._safe_load), but baking them in here means
+# the image is fully self-contained: no separate training step has to
+# run post-deploy before predictions start working.
+RUN python -m ml.data.generate_training_data \
+    && python -m ml.training.train_priority \
+    && python -m ml.training.train_department \
+    && python -m ml.training.train_sla
+
+# Render's start command for this service (see render.yaml's dockerCommand:
+# ./start-backend.sh) — bootstraps the DB, then execs uvicorn. A real
+# script file rather than an inline shell string, because Render's
+# dockerCommand field doesn't reliably shell-parse quoted "cmd1 && cmd2"
+# strings (see the script's own header comment for what that failure
+# looked like). chmod +x here, before the chown below, so appuser can
+# execute it.
+COPY docker/start-backend.sh start-backend.sh
+RUN chmod +x start-backend.sh
+
+# Run as a non-root user. A dependency RCE or container escape shouldn't
+# hand an attacker root inside the container. uploads/ and logs/ are
+# created and chowned now, before switching users, since USER only
+# affects RUN/CMD instructions that come after it.
+RUN useradd --create-home --uid 1000 appuser \
+    && mkdir -p uploads logs \
+    && chown -R appuser:appuser /app
+USER appuser
+
+EXPOSE 8000
+
+# Uses Python's stdlib instead of curl/wget so no extra apt package is
+# needed just for the healthcheck. Hits backend/main.py's root endpoint.
+HEALTHCHECK --interval=30s --timeout=5s --start-period=15s --retries=3 \
+    CMD python -c "import urllib.request; urllib.request.urlopen('http://localhost:8000/')" || exit 1
+
+# No migration/seed step baked into CMD on purpose — see
+# docker/docker-compose.yml (dev: bootstraps via database/bootstrap.py
+# in the backend service's `command:`) and the Milestone 14 notes on
+# Render's Pre-Deploy Command (prod: migrations run once, before any
+# replica starts serving traffic, instead of racing multiple replicas
+# against the same migration on every container start).
+CMD ["uvicorn", "backend.main:app", "--host", "0.0.0.0", "--port", "8000"]

@@ -1,0 +1,35 @@
+# Throwaway Postgres for integration tests — NOT the dev/prod database.
+#
+# Why a separate compose file instead of reusing a dev docker-compose.yml
+# (which doesn't exist yet — that's Milestone 12/13's job): integration
+# tests need a database that's safe to create/drop tables on and that
+# never contains real data. Keeping it in its own file means running the
+# test suite can never accidentally point at a database anyone cares
+# about, and this file has no dependency on the app's own Dockerfile —
+# it only needs to exist before `pytest tests/integration` runs.
+#
+# Usage:
+#   docker compose -f docker/docker-compose.test.yml up -d
+#   pytest tests/integration
+#   docker compose -f docker/docker-compose.test.yml down -v
+services:
+  postgres_test:
+    image: postgres:16-alpine
+    container_name: helpdesk_ai_postgres_test
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: test_password
+      POSTGRES_DB: helpdesk_ai_test
+    ports:
+      # Host port 5433, not 5432 — avoids clashing with a dev Postgres
+      # instance that might already be running on the default port.
+      - "5433:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    tmpfs:
+      # Data directory lives in memory, not on disk — nothing to clean
+      # up between runs beyond `docker compose down -v`, and it's faster.
+      - /var/lib/postgresql/data
